@@ -1,0 +1,12 @@
+sh
+numpy
+torch
+torchvision
+scipy
+pandas
+onnx
+onnxruntime
+
+[dev]
+ipython
+ipdb

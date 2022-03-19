@@ -1,0 +1,14 @@
+Metadata-Version: 2.1
+Name: oval-bab
+Version: 0.0.1
+Summary: OVAL Branch and Bound framework for neural network verification
+Home-page: UNKNOWN
+Author: OVAL group, University of Oxford
+License: MIT
+Description: UNKNOWN
+Platform: UNKNOWN
+Classifier: Development Status :: 1 - Planning
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.6
+Provides-Extra: dev
