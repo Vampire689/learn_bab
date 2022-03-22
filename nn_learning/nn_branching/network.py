@@ -168,16 +168,17 @@ class ComputeFinalScore(nn.Module):
     #     return scores
 
 
-    def forward(self, mu, primal_score, secondary_score):
-        scores1, scores2 = [], []
+    def forward(self, mu, primal_score, secondary_score, mask):
+        nn_scores = []
         for i, batch_layer_mu in enumerate(mu[1:-1]):
             layer_mu = th.cat([i for i in batch_layer_mu], 0)
+            batch_mask = th.cat([m for m in mask[i]], 0).reshape(-1, 1)
             scores = self.fscore(F.relu(self.fnode(layer_mu)))
+            scores = scores * batch_mask
             scores = scores.reshape(batch_layer_mu.shape[0], batch_layer_mu.shape[1], -1)
-            scores1.append(scores[:,:,0] + primal_score[i])
-            scores2.append(scores[:,:,1] + secondary_score[i])
+            nn_scores.append(scores)
 
-        return scores1, scores2
+        return nn_scores
         
 
 class ExpNet(nn.Module):
@@ -188,10 +189,9 @@ class ExpNet(nn.Module):
 
     def forward(self, lower_bounds, upper_bounds, mask, layers, primal_score, secondary_score):
         mu = self.EmbedUpdates(lower_bounds, upper_bounds, mask, layers, primal_score, secondary_score)
-        scores1, scores2 = self.ComputeFinalScore(mu, primal_score, secondary_score)
-        # mu = 降维mu
+        scores = self.ComputeFinalScore(mu, primal_score, secondary_score, mask)
 
-        return scores1, scores2
+        return scores
 
 
 def init_mu(lower_bounds_all, p):

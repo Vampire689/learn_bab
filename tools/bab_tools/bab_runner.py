@@ -24,7 +24,9 @@ import json
 # Pre-fixed parameters
 gpu = True
 decision_bound = 0
-train = True
+TRAIN = True
+EPOCH = 20
+TIMEOUT = 100
 model_path = '/data00/home/xuehao.michael/oval-bab/nn_learning/nn_branching/models/test.pth'
 
 
@@ -351,7 +353,7 @@ def bab_from_json(json_params, verif_layers, domain, return_dict, nn_name, insta
     branching_dict = json_params["branching"]
     if isinstance(branching_dict["max_domains"], dict):
         branching_dict["max_domains"] = branching_dict.pop("max_domains")[nn_name]  # max_domains varies by network
-    brancher = BranchingChoice(branching_dict, cuda_verif_layers, nn_dict=model_path, train=train)
+    brancher = BranchingChoice(branching_dict, cuda_verif_layers, nn_dict=model_path, train=TRAIN)
 
     # upper bounding
     if "upper_bounding" in json_params:
@@ -366,7 +368,7 @@ def bab_from_json(json_params, verif_layers, domain, return_dict, nn_name, insta
     with torch.no_grad():
         min_lb, min_ub, ub_point, nb_states = relu_bab(
             intermediate_dict, out_bounds_dict, brancher, domain, decision_bound, eps=epsilon,
-            ub_method=adv_model, timeout=timeout, max_cpu_subdomains=max_cpu_domains, start_time=start_time)
+            ub_method=adv_model, timeout=TIMEOUT if TRAIN else timeout, max_cpu_subdomains=max_cpu_domains, start_time=start_time)
 
     if not (min_lb or min_ub or ub_point):
         return_dict["min_lb"] = None;

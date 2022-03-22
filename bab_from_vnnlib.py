@@ -1,8 +1,10 @@
 import time, os, argparse, csv, json, gc, pickle, traceback
 import pandas as pd
 import torch
-from tools.bab_tools.bab_runner import bab_from_json, bab_output_from_return_dict
+from tools.bab_tools.bab_runner import bab_from_json, bab_output_from_return_dict, EPOCH, TRAIN
 from tools.bab_tools.vnnlib_utils import load_vnnlib_property
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
 def bab_from_vnnlib_dataset(dataset_csv_filename, json_filename, result_path, is_adversarial=False):
@@ -26,25 +28,25 @@ def bab_from_vnnlib_dataset(dataset_csv_filename, json_filename, result_path, is
             index=indices, columns=["prop"] + [f'BSAT_{json_name}', f'BBran_{json_name}', f'BTime_{json_name}'])
         results_table.to_pickle(record_name)
 
-    for idx, (onnx_filename, vnnlib_filename, timeout) in enumerate(dataset_spec):
+    for _ in range(EPOCH if TRAIN else 1):
+        for idx, (onnx_filename, vnnlib_filename, timeout) in enumerate(dataset_spec):
+            torch.cuda.empty_cache()
+            gc.collect()  # Garbage-collect cpu memory.
 
-        torch.cuda.empty_cache()
-        gc.collect()  # Garbage-collect cpu memory.
+            if pd.isna(results_table.loc[idx]["prop"]) == False and (not TRAIN):
+                print(f'the {idx}th element is done')
+                # continue
 
-        if pd.isna(results_table.loc[idx]["prop"]) == False:
-            print(f'the {idx}th element is done')
-            continue
+            # Run BaB
+            bab_out, bab_nb_states, bab_time = bab_from_vnnlib(
+                base_path + onnx_filename, base_path + vnnlib_filename, int(float(timeout)), json_filename,
+                is_adversarial=is_adversarial)
 
-        # Run BaB
-        bab_out, bab_nb_states, bab_time = bab_from_vnnlib(
-            base_path + onnx_filename, base_path + vnnlib_filename, int(float(timeout)), json_filename,
-            is_adversarial=is_adversarial)
-
-        results_table.loc[idx]["prop"] = os.path.basename(vnnlib_filename.replace(".vnnlib", ""))
-        results_table.loc[idx][f"BSAT_{json_name}"] = bab_out
-        results_table.loc[idx][f"BBran_{json_name}"] = bab_nb_states
-        results_table.loc[idx][f"BTime_{json_name}"] = bab_time
-        results_table.to_pickle(record_name)
+            results_table.loc[idx]["prop"] = os.path.basename(vnnlib_filename.replace(".vnnlib", ""))
+            results_table.loc[idx][f"BSAT_{json_name}"] = bab_out
+            results_table.loc[idx][f"BBran_{json_name}"] = bab_nb_states
+            results_table.loc[idx][f"BTime_{json_name}"] = bab_time
+            results_table.to_pickle(record_name)
 
 
 def bab_from_vnnlib(onnx_filename, vnnlib_filename, timeout, json_filename, is_adversarial=False, time_results=True,

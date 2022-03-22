@@ -3,3 +3,5 @@
 *.pyc
 *.zip
 test_results/
+screenlog.0
+*.pth

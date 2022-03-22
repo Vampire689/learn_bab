@@ -41,7 +41,7 @@ class BranchingChoice:
 
         # init NN model
         if self.heuristic_type in ["NN"]:
-            self.model = ExpNet(64)
+            self.model = ExpNet(64).to(self.device)
             if self.train:
                 self.optimizer = optim.Adam(self.model.parameters(), lr=0.001, eps=1e-5, weight_decay=1e-4)
                 try:
@@ -49,10 +49,10 @@ class BranchingChoice:
                     self.model.load_state_dict(checkpoint['model_state_dict'])
                     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 except:    pass
-                self.model.train().to(self.device)  
+                self.model.train()
             else: 
                 self.model.load_state_dict(torch.load(nn_dict)['model_state_dict'])
-                self.model.eval().to(self.device)
+                self.model.eval()
 
         # Set the branching function.
         branching_function_dict = {"SR": self.branch_sr, "FSB": self.branch_fsb, "input": self.branch_input_bab, "NN": self.branch_nn}
@@ -305,8 +305,9 @@ class BranchingChoice:
         branch_lbs = branch_lbs.squeeze(-1)
         baseline = branch_lbs[:batch_size]
         branch_lbs = branch_lbs[batch_size:].view(2, n_layers, cand_per_layer, batch_size)
-        scores = (branch_lbs - baseline).min(0)[0]  # the min between the LB/UB splits performs better than the average
-        scores = torch.where(torch.isnan(scores), float("-inf") * torch.ones_like(scores), scores)
+        scores = ((branch_lbs - baseline) / (-baseline)).min(0)[0]  # the min between the LB/UB splits performs better than the average
+        scores = torch.where(torch.isnan(scores), -1 * torch.ones_like(scores), scores)
+        scores = torch.clamp(scores, min=0, max=1)
         max_per_layer, ind_per_layer = torch.max(scores, 1)
         impr, layer_ind = torch.max(max_per_layer, 0)
 
@@ -334,11 +335,11 @@ class BranchingChoice:
             self.model.train()
             self.optimizer.zero_grad()
             with torch.enable_grad():
-                nn_score1, nn_score2 = self.model(lower_bounds, upper_bounds, mask, self.layers, primal_score, secondary_score)
+                nn_score = self.model(lower_bounds, upper_bounds, mask, self.layers, primal_score, secondary_score)
 
                 # generate ground truth
-                layer_cands = random.randint(1, 9)
-                fsb_decisions, impr, split_candidates, fsb_score = self.filtered_branching(
+                layer_cands = random.randint(1, 7)
+                decisions, impr, split_candidates, fsb_score = self.filtered_branching(
                     domains, lower_bounds, upper_bounds, [primal_score, secondary_score], [layer_cands, layer_cands])
                 half = split_candidates.shape[2]//2
                 gt_score_idx1, gt_score_idx2 = split_candidates[:, :, :half], split_candidates[:, :, half:]
@@ -347,12 +348,27 @@ class BranchingChoice:
                 # optimize NN
                 loss = 0
                 for i in range(len(gt_score_idx1)):
-                    nn_candi_score1 =  nn_score1[i].gather(dim=1, index=gt_score_idx1[i])
-                    nn_candi_score2 =  nn_score2[i].gather(dim=1, index=gt_score_idx2[i])
+                    nn_candi_score1 = nn_score[i][:,:,0].gather(dim=1, index=gt_score_idx1[i])
+                    nn_candi_score2 = nn_score[i][:,:,1].gather(dim=1, index=gt_score_idx2[i])
                     loss += F.l1_loss(nn_candi_score1, gt_score1[i]) + F.l1_loss(nn_candi_score2, gt_score2[i])
                 loss.backward()
                 self.optimizer.step()
-        
+                print('loss:', loss.data)
+        else:
+            self.model.eval()
+            with torch.no_grad():
+                nn_score = self.model(lower_bounds, upper_bounds, mask, self.layers, primal_score, secondary_score)
+            
+            decisions = []
+            impr = torch.zeros(batch_size).to(self.device)
+            for idx in range(batch_size):
+                score_item = [torch.max(s[idx], 1)[0] for s in nn_score]
+                max_info = [torch.max(i, 0) for i in score_item]
+                max_score = max(max_info)
+                decision_layer = max_info.index(max_score)
+                decision_index = max_info[decision_layer][1].item()
+                decisions.append([decision_layer, decision_index])
+                impr[idx] = max_score.values
 
         # Use SR as fallback strategy when FSB would re-split.
         if (impr == 0).any():
@@ -360,14 +376,14 @@ class BranchingChoice:
             sr_decisions = self.branch_sr(domains, lower_bounds, upper_bounds)
             entries_to_check = (impr == 0).nonzero()
             for batch_idx in entries_to_check:
-                clb = lower_bounds[fsb_decisions[batch_idx][0] + 1][batch_idx].view(-1)[fsb_decisions[batch_idx][1]]
-                cub = upper_bounds[fsb_decisions[batch_idx][0] + 1][batch_idx].view(-1)[fsb_decisions[batch_idx][1]]
+                clb = lower_bounds[decisions[batch_idx][0] + 1][batch_idx].view(-1)[decisions[batch_idx][1]]
+                cub = upper_bounds[decisions[batch_idx][0] + 1][batch_idx].view(-1)[decisions[batch_idx][1]]
                 if cub <= 0 or clb >= 0:
-                    fsb_decisions[batch_idx] = sr_decisions[batch_idx]
+                    decisions[batch_idx] = sr_decisions[batch_idx]
                     sr_counter += 1
             print(f"Using BaBSR for {sr_counter} decisions")
 
-        return fsb_decisions
+        return decisions
 
     def save_nn(self):
         torch.save({

@@ -492,11 +492,20 @@ def relu_bab(intermediate_dict, out_bounds_dict, brancher, domain, decision_boun
             if attack_ub < global_ub:
                 global_ub = attack_ub
                 global_ub_point = attack_point
+                # Remove domains clearly on the right side of the decision threshold: our goal is to which side of it is the
+                # minimum, no need to know more for these domains.
+                prune_value = min(global_ub.cpu() - eps, decision_bound + eps)
+                domains = bab.prune_domains(domains, prune_value)
 
             if is_adv.sum() > 0:
                  print("Found a counter-example.")
 
+            
+
         print(f"Current: lb:{global_lb}\t ub: {global_ub}")
+
+        
+
         # Stopping criterion
         if global_lb >= decision_bound:
             break

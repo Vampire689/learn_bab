@@ -12,33 +12,7 @@
         },
         "type": "beta-crown",
         "auto_iters": true,
-        "batch_size": 3000
-      },
-      {
-        "bounding_algorithm": "dual-anderson",
-        "params": {
-            "bigm": "init",
-            "cut": "only",
-            "bigm_algorithm": "adam",
-            "nb_iter": 900,
-            "cut_frequency": 450,
-            "max_cuts": 12,
-            "cut_add": 2,
-            "betas": [0.9, 0.999],
-            "initial_step_size": 1e-2,
-            "final_step_size": 1e-5,
-            "init_params": {
-                "nb_outer_iter": 2000,
-                "initial_step_size": 1e-2,
-                "final_step_size": 1e-4,
-                "betas": [0.9, 0.999],
-                "larger_irl_if_naive_init": true
-            },
-            "restrict_factor": 1.5
-        },
-        "auto_iters": true,
-        "batch_size": 150,
-        "hard_overhead": 200
+        "batch_size": 32
       }
     ],
     "do_ubs": false,
@@ -56,7 +30,7 @@
           "joint_ib": false
         },
         "type": "alpha-crown",
-      "max_solver_batch": 15000
+      "max_solver_batch": 7000
     },
     "tight_ib": null,
     "fixed_ib": true,
@@ -77,7 +51,7 @@
 
   "branching": {
     "heuristic_type": "NN",
-    "max_domains": 3000,
+    "max_domains": null,
     "bounding": {
       "bounding_algorithm": "propagation",
       "params": {

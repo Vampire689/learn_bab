@@ -25,12 +25,13 @@ def pick_out(domains, threshold):
 
     Returns: Non prunable CandidateDomain with the lowest reference_value.
     '''
-    assert len(domains) > 0, "The given domains list is empty."
-    while True:
-        assert len(domains) > 0, "No domain left to pick from."
-        selected_candidate_domain = domains.pop(0)
-        if selected_candidate_domain.lower_bound < threshold:
-            break
+    # assert len(domains) > 0, "The given domains list is empty."
+    # while True:
+    #     assert len(domains) > 0, "No domain left to pick from."
+    #     selected_candidate_domain = domains.pop(0)
+    #     if selected_candidate_domain.lower_bound < threshold:
+    #         break
+    selected_candidate_domain = domains.pop(0)
 
     return selected_candidate_domain
 
