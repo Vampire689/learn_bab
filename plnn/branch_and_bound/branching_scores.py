@@ -48,6 +48,7 @@ class BranchingChoice:
                     checkpoint = torch.load(nn_dict)    
                     self.model.load_state_dict(checkpoint['model_state_dict'])
                     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    print("Loaded previous model and optimizer")
                 except:    pass
                 self.model.train()
             else: 
@@ -305,7 +306,7 @@ class BranchingChoice:
         branch_lbs = branch_lbs.squeeze(-1)
         baseline = branch_lbs[:batch_size]
         branch_lbs = branch_lbs[batch_size:].view(2, n_layers, cand_per_layer, batch_size)
-        scores = ((branch_lbs - baseline) / (-baseline)).min(0)[0]  # the min between the LB/UB splits performs better than the average
+        scores = ((branch_lbs - baseline) / torch.abs(baseline)).min(0)[0]  # the min between the LB/UB splits performs better than the average
         scores = torch.where(torch.isnan(scores), -1 * torch.ones_like(scores), scores)
         scores = torch.clamp(scores, min=0, max=1)
         max_per_layer, ind_per_layer = torch.max(scores, 1)
@@ -354,6 +355,7 @@ class BranchingChoice:
                 loss.backward()
                 self.optimizer.step()
                 print('loss:', loss.data)
+                torch.cuda.empty_cache()
         else:
             self.model.eval()
             with torch.no_grad():

@@ -159,13 +159,6 @@ class ComputeFinalScore(nn.Module):
         self.p = p
         self.fnode = nn.Linear(p, p)
         self.fscore = nn.Linear(p, 2)
-    
-    # def utils(self, mu):
-    #     scores = []
-    #     for layer in mu[1:-1]:
-    #         scores_current_layer = mu[0].new_full((layer.size()[0],), fill_value=0.0) 
-    #         scores.append(scores_current_layer)
-    #     return scores
 
 
     def forward(self, mu, primal_score, secondary_score, mask):
@@ -174,7 +167,11 @@ class ComputeFinalScore(nn.Module):
             layer_mu = th.cat([i for i in batch_layer_mu], 0)
             batch_mask = th.cat([m for m in mask[i]], 0).reshape(-1, 1)
             scores = self.fscore(F.relu(self.fnode(layer_mu)))
-            scores = scores * batch_mask
+            if not self.training:
+                batch_primal = th.cat([s for s in primal_score[i]], 0).reshape(-1, 1)
+                batch_second = th.cat([s for s in secondary_score[i]], 0).reshape(-1, 1)
+                base_scores = th.cat([batch_primal, batch_second], -1)
+            scores = base_scores * (1 + scores) * batch_mask
             scores = scores.reshape(batch_layer_mu.shape[0], batch_layer_mu.shape[1], -1)
             nn_scores.append(scores)
 

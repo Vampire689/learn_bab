@@ -24,9 +24,9 @@ import json
 # Pre-fixed parameters
 gpu = True
 decision_bound = 0
-TRAIN = True
+TRAIN = False
 EPOCH = 20
-TIMEOUT = 100
+TIMEOUT = 150
 model_path = '/data00/home/xuehao.michael/oval-bab/nn_learning/nn_branching/models/test.pth'
 
 
@@ -331,7 +331,7 @@ def parse_bounding_algorithms(param_dict, cuda_verif_layers, nn_name):
 
 
 def bab_from_json(json_params, verif_layers, domain, return_dict, nn_name, instance_timeout=None,
-                  gpu=True, decision_bound=0, start_time=None):
+                  gpu=gpu, decision_bound=0, start_time=None):
 
     # Pass the parameters for the BaB code via a .json file, rather than through command line arguments.
     epsilon = 1e-4
