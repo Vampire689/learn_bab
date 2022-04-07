@@ -24,10 +24,11 @@ import json
 # Pre-fixed parameters
 gpu = True
 decision_bound = 0
-TRAIN = False
+TRAIN = True
 EPOCH = 20
 TIMEOUT = 150
-model_path = '/data00/home/xuehao.michael/oval-bab/nn_learning/nn_branching/models/test.pth'
+branch_model_path = '/data00/home/xuehao.michael/oval-bab/nn_learning/nn_branching/models/test.pth'
+bound_model_path = '/data00/home/xuehao.michael/oval-bab/nn_learning/nn_branching/models/test.pth'
 
 
 def bab(verif_layers, domain, return_dict, timeout, batch_size, method, tot_iter,  parent_init, args):
@@ -353,7 +354,7 @@ def bab_from_json(json_params, verif_layers, domain, return_dict, nn_name, insta
     branching_dict = json_params["branching"]
     if isinstance(branching_dict["max_domains"], dict):
         branching_dict["max_domains"] = branching_dict.pop("max_domains")[nn_name]  # max_domains varies by network
-    brancher = BranchingChoice(branching_dict, cuda_verif_layers, nn_dict=model_path, train=TRAIN)
+    brancher = BranchingChoice(branching_dict, cuda_verif_layers)
 
     # upper bounding
     if "upper_bounding" in json_params:

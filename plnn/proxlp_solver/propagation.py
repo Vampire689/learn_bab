@@ -1,8 +1,10 @@
 import torch
 from torch import nn
+from torch import optim
 from plnn.dual_bounding import DualBounding
 from plnn.proxlp_solver import utils
 from plnn.branch_and_bound.utils import ParentInit
+from nn_learning.nn_bounding.network import ExpNet
 
 
 default_params = {
@@ -31,6 +33,26 @@ class Propagation(DualBounding):
         self.store_bounds_primal = store_bounds_primal
         self.bounds_primal = None
         self.external_init = None
+        self.nn_init = self.params["nn_alpha"] if "nn_alpha" in self.params else False
+
+        if self.nn_init:
+            from tools.bab_tools.bab_runner import TRAIN, bound_model_path
+            self.device = layers[0].weight.device
+            self.train = TRAIN
+            self.model = ExpNet(64).to(self.device)
+            if self.train:
+                self.optimizer = optim.Adam(self.model.parameters(), lr=0.001, eps=1e-5, weight_decay=1e-4)
+                try:
+                    checkpoint = torch.load(bound_model_path)    
+                    self.model.load_state_dict(checkpoint['model_state_dict'])
+                    self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    print("Loaded previous model and optimizer")
+                except:    pass
+                self.model.train()
+            else: 
+                self.model.load_state_dict(torch.load(bound_model_path)['model_state_dict'])
+                self.model.eval()
+
 
         assert type in ["naive", "KW", "crown", "best_prop", "alpha-crown", "gamma-crown", "beta-crown"]
         if type == "best_prop":
@@ -98,6 +120,11 @@ class Propagation(DualBounding):
                             gammas["u"].append(torch.zeros_like(crown_lb_slope))
                         elif self.type == "beta-crown":
                             betas.append(torch.zeros_like(crown_lb_slope))
+                
+                # nn bounding for alphas
+                if self.nn_init:
+                    alphas = self.model(lower_bounds, upper_bounds, self.layers)
+                    alphas = [a.unsqueeze(1).repeat((1, add_coeff.shape[1]) + ((1,)*(a.dim() - 1))) for a in alphas]
 
             # TODO: can't reproduce Beta-CROWN results for joint IB within BaB. Probably need to exclude non-ambiguous
             #  bounds from the computation

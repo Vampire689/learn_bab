@@ -27,13 +27,17 @@ class EmbedLayerUpdate(nn.Module):
         # self.inp_f_1 = nn.Linear(p,p)
 
         # for activation nodes
-        self.fc1 = nn.Linear(5, p)
+        self.fc1 = nn.Linear(3, p)
         self.fc1_1 = nn.Linear(p, p)
         self.fc2 = nn.Linear(2*p, p)     
         self.fc2_1 = nn.Linear(p, p)  
 
+        # backward
+        self.fc3 = nn.Linear(2*p, p)     
+        self.fc3_1 = nn.Linear(p, p)  
 
-    def forward(self, lower_bounds, upper_bounds, mask, primal_score, secondary_score, layers, mu):
+
+    def forward(self, lower_bounds, upper_bounds, layers, mu):
 
         # NOTE: All bounds should be at the same size as the layer outputs
         #       We have assumed that the last property layer is linear       
@@ -44,8 +48,9 @@ class EmbedLayerUpdate(nn.Module):
         relu_idx = 0
         bound_idx = 1
         out_features = [-1]+ th.tensor(lower_bounds[0][0].size()).tolist()
+        len_layers = [i+1 for i in range(len(layers)) if type(layers[i]) is nn.ReLU][len(lower_bounds)-2]
 
-        for layer_idx, layer in enumerate(layers[:-1]):
+        for layer_idx, layer in enumerate(layers[:len_layers]):
             if type(layer) in [BatchConvOp, ConvOp, nn.Conv2d]:
                 layer_weight = layer.weight if type(layer) in [nn.Conv2d] else layer.weights
                 if type(layer) is BatchConvOp:
@@ -86,22 +91,14 @@ class EmbedLayerUpdate(nn.Module):
                 #import pdb; pdb.set_trace()
 
                 # collecting information
-                primal_score_inp = th.cat([i for i in primal_score[relu_idx]], 0)
-                secondary_score_inp = th.cat([i for i in secondary_score[relu_idx]], 0)
                 nb_informations = th.cat([upper_ratio.unsqueeze(-1), 
                                             lower_ratio.unsqueeze(-1),
-                                            diff.unsqueeze(-1), 
-                                            primal_score_inp.unsqueeze(-1),
-                                            secondary_score_inp.unsqueeze(-1)], 1)
+                                            diff.unsqueeze(-1)], 1)
                 nb_embeddings = self.fc1_1(F.relu(self.fc1(nb_informations)))
       
                 # embedding updates
                 embedding_informations = th.cat([nb_embeddings_pre, nb_embeddings], 1)
                 nb_embeddings = self.fc2_1(F.relu(self.fc2(embedding_informations)))
-                
-                # attention
-                attention_map = th.cat([i for i in mask[relu_idx]], 0).reshape(-1, 1)
-                nb_embeddings = nb_embeddings * attention_map
 
                 relu_idx += 1
                 mu[relu_idx] = nb_embeddings.reshape(mu[relu_idx].size())
@@ -111,7 +108,57 @@ class EmbedLayerUpdate(nn.Module):
                 pass
             else:
                 raise NotImplementedError
+
+        ## BACKWARD PASS
+        nb_embeddings_pre = None
+        bound_idx -= 1
+
+        for layer_idx, layer in reversed(list(enumerate(layers[1:len_layers]))):
+            if type(layer) is nn.ReLU:
+                if nb_embeddings_pre is not None:
+                    nb_embeddings = mu[relu_idx].reshape(-1, p)
+                    nb_embeddings_pre = nb_embeddings_pre.reshape(nb_embeddings_pre.shape[0], -1)
+                    nb_embeddings_pre = th.cat([nb_embeddings_pre[i*p:(1+i)*p] for i in range(batch_size)], 1)
+                    nb_embeddings_pre = th.t(nb_embeddings_pre)
+                    # embedding updates
+                    embedding_informations = th.cat([nb_embeddings_pre, nb_embeddings], 1)
+                    nb_embeddings = self.fc3_1(F.relu(self.fc3(embedding_informations)))
+                    mu[relu_idx] = nb_embeddings.reshape(mu[relu_idx].size())
+
+                out_features = [-1]+ th.tensor(lower_bounds[bound_idx][0].size()).tolist()
+                nb_embeddings_pre = mu[relu_idx].transpose(1, 2).reshape(out_features)
+                relu_idx -= 1
+
+            elif type(layer) in [BatchConvOp, ConvOp, nn.Conv2d]:
+                layer_weight = layer.weight if type(layer) in [nn.Conv2d] else layer.weights
+                if type(layer) is BatchConvOp:
+                    layer_bias = layer.unconditioned_bias.detach().view(-1)
+                elif type(layer) is ConvOp:
+                    layer_bias = layer.bias.view(-1)
+                else:
+                    layer_bias = layer.bias
+                
+                nb_embeddings_pre = nb_embeddings_pre - layer_bias.reshape(1, -1, 1, 1)
+                nb_embeddings_pre = F.conv_transpose2d(nb_embeddings_pre, layer_weight,
+                                        stride=layer.stride, padding=layer.padding, dilation=layer.dilation, groups=layer.groups)
+                bound_idx -= 1
             
+            elif type(layer) in [nn.Linear, LinearOp, BatchLinearOp]:
+                layer_weight = layer.weight if type(layer) in [nn.Linear] else layer.weights
+                layer_bias = layer.bias
+
+                nb_embeddings_pre = nb_embeddings_pre - layer_bias.reshape(1, -1)
+                nb_embeddings_pre = F.linear(nb_embeddings_pre, th.t(layer_weight))
+                bound_idx -= 1
+
+            elif type(layer) in [nn.Flatten, Flatten]:
+                out_features = [-1] + th.tensor(lower_bounds[bound_idx][0].size()).tolist()
+                nb_embeddings_pre = nb_embeddings_pre.reshape(out_features)
+
+            else:
+                raise NotImplementedError
+
+
         return mu
 
 
@@ -133,9 +180,9 @@ class EmbedUpdates(nn.Module):
         self.update = EmbedLayerUpdate(p)
 
 
-    def forward(self, lower_bounds, upper_bounds, mask, layers, primal_score, secondary_score):
+    def forward(self, lower_bounds, upper_bounds, layers):
         mu = init_mu(lower_bounds, self.p)
-        mu = self.update(lower_bounds, upper_bounds, mask, primal_score, secondary_score, layers, mu)
+        mu = self.update(lower_bounds, upper_bounds, layers, mu)
         return mu
 
 
@@ -150,21 +197,15 @@ class ComputeFinalScore(nn.Module):
         super(ComputeFinalScore,self).__init__()
         self.p = p
         self.fnode = nn.Linear(p, p)
-        self.fscore = nn.Linear(p, 2)
+        self.fscore = nn.Linear(p, 1)
 
 
-    def forward(self, mu, primal_score, secondary_score, mask):
+    def forward(self, mu, lower_bounds, upper_bounds):
         nn_scores = []
-        for i, batch_layer_mu in enumerate(mu[1:-1]):
+        for idx, batch_layer_mu in enumerate(mu[1:]):
             layer_mu = th.cat([i for i in batch_layer_mu], 0)
-            batch_mask = th.cat([m for m in mask[i]], 0).reshape(-1, 1)
             scores = self.fscore(F.relu(self.fnode(layer_mu)))
-            if not self.training:
-                batch_primal = th.cat([s for s in primal_score[i]], 0).reshape(-1, 1)
-                batch_second = th.cat([s for s in secondary_score[i]], 0).reshape(-1, 1)
-                base_scores = th.cat([batch_primal, batch_second], -1)
-                scores = base_scores * (1 + scores) * batch_mask
-            scores = scores.reshape(batch_layer_mu.shape[0], batch_layer_mu.shape[1], -1)
+            scores = scores.reshape(lower_bounds[idx+1].shape)
             nn_scores.append(scores)
 
         return nn_scores
@@ -176,9 +217,9 @@ class ExpNet(nn.Module):
         self.EmbedUpdates = EmbedUpdates(p)
         self.ComputeFinalScore = ComputeFinalScore(p)
 
-    def forward(self, lower_bounds, upper_bounds, mask, layers, primal_score, secondary_score):
-        mu = self.EmbedUpdates(lower_bounds, upper_bounds, mask, layers, primal_score, secondary_score)
-        scores = self.ComputeFinalScore(mu, primal_score, secondary_score, mask)
+    def forward(self, lower_bounds, upper_bounds, layers):
+        mu = self.EmbedUpdates(lower_bounds, upper_bounds, layers)
+        scores = self.ComputeFinalScore(mu, lower_bounds, upper_bounds)
 
         return scores
 

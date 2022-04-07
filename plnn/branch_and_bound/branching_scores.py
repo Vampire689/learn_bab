@@ -11,12 +11,13 @@ class BranchingChoice:
     Class implementing branching decisions. The branching is accessed via the branch function.
     """
 
-    def __init__(self, branch_dict, layers, sparsest_layer=0, nn_dict=None, train=True):
+    def __init__(self, branch_dict, layers, sparsest_layer=0):
         """
         :param branch_dict: dictionary containing the settings for the brancher
         :param layers: list of pytorch NN layers describing the network to perform the branching on
         :param sparsest_layer: if all layers are dense, set it to -1
         """
+        from tools.bab_tools.bab_runner import TRAIN, branch_model_path
         # Store content of branch_dict as class attributes.
         for key in ['heuristic_type', 'bounding', 'max_domains']:
             if key == "bounding":
@@ -30,8 +31,8 @@ class BranchingChoice:
         self.layers = layers
         self.sparsest_layer = sparsest_layer
         self.device = layers[0].weight.device
-        self.train = train and (self.heuristic_type in ["NN"])
-        self.nn_dict = nn_dict
+        self.train = TRAIN and (self.heuristic_type in ["NN"])
+        self.nn_dict = branch_model_path
 
         # Set SR-specific parameters and variables.
         if self.heuristic_type in ["SR", "FSB", "NN"]:
@@ -45,14 +46,14 @@ class BranchingChoice:
             if self.train:
                 self.optimizer = optim.Adam(self.model.parameters(), lr=0.001, eps=1e-5, weight_decay=1e-4)
                 try:
-                    checkpoint = torch.load(nn_dict)    
+                    checkpoint = torch.load(self.nn_dict)    
                     self.model.load_state_dict(checkpoint['model_state_dict'])
                     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                     print("Loaded previous model and optimizer")
                 except:    pass
                 self.model.train()
             else: 
-                self.model.load_state_dict(torch.load(nn_dict)['model_state_dict'])
+                self.model.load_state_dict(torch.load(self.nn_dict)['model_state_dict'])
                 self.model.eval()
 
         # Set the branching function.

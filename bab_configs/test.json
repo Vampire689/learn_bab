@@ -27,7 +27,8 @@
           "initial_step_size": 1e0,
           "step_size_decay": 0.98,
           "betas": [0.9, 0.999],
-          "joint_ib": false
+          "joint_ib": false,
+          "nn_alpha": true
         },
         "type": "alpha-crown",
       "max_solver_batch": 7000
